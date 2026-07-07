@@ -91,6 +91,9 @@ CREATE TABLE IF NOT EXISTS `testpiece` (
   `Color_L` float DEFAULT NULL,
   `Color_A` float DEFAULT NULL,
   `Color_B` float DEFAULT NULL,
+  `PrimaryColor` varchar(32) DEFAULT NULL,
+  `DominantColors` mediumtext DEFAULT NULL,
+  `ColorProfile` mediumtext DEFAULT NULL,
   `GlazeTypeID` int(10) unsigned DEFAULT NULL,
   `FiringTemperature` int(11) DEFAULT NULL,
   `ChemicalComposition` mediumtext DEFAULT NULL,
@@ -98,10 +101,13 @@ CREATE TABLE IF NOT EXISTS `testpiece` (
   `EntryDate` date DEFAULT NULL,
   `FiringType` mediumtext DEFAULT NULL,
   `SoilType` mediumtext DEFAULT NULL,
+  `AutoTags` mediumtext DEFAULT NULL,
+  `AutoKeywords` mediumtext DEFAULT NULL,
   PRIMARY KEY (`ID`),
   KEY `idx_testpiece_colorL` (`Color_L`),
   KEY `idx_testpiece_colorA` (`Color_A`),
   KEY `idx_testpiece_colorB` (`Color_B`),
+  KEY `idx_testpiece_primarycolor` (`PrimaryColor`),
   KEY `idx_testpiece_firingtemp` (`FiringTemperature`),
   KEY `idx_testpiece_firingtype` (`FiringType`(768)),
   KEY `idx_testpiece_entrydate` (`EntryDate`),
@@ -110,6 +116,7 @@ CREATE TABLE IF NOT EXISTS `testpiece` (
   KEY `idx_testpiece_board` (`BoardID`),
   KEY `idx_soil_type` (`SoilType`(768)),
   FULLTEXT KEY `ft_chemical` (`ChemicalComposition`),
+  FULLTEXT KEY `ft_auto_metadata` (`AutoTags`,`AutoKeywords`),
   CONSTRAINT `testpiece_ibfk_1` FOREIGN KEY (`BoardID`) REFERENCES `tileboard` (`ID`) ON DELETE CASCADE,
   CONSTRAINT `testpiece_ibfk_2` FOREIGN KEY (`GlazeTypeID`) REFERENCES `glazetype` (`ID`),
   CONSTRAINT `testpiece_ibfk_3` FOREIGN KEY (`SurfaceConditionID`) REFERENCES `surfacecondition` (`ID`)
@@ -178,6 +185,9 @@ CREATE TABLE `view_testpiece_full` (
 	`Color_L` FLOAT NULL,
 	`Color_A` FLOAT NULL,
 	`Color_B` FLOAT NULL,
+	`PrimaryColor` VARCHAR(32) NULL COLLATE 'utf8mb4_unicode_ci',
+	`DominantColors` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci',
+	`ColorProfile` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci',
 	`GlazeType` VARCHAR(100) NULL COLLATE 'utf8mb4_unicode_ci',
 	`SurfaceCondition` VARCHAR(100) NULL COLLATE 'utf8mb4_unicode_ci',
 	`BoardID` INT(10) UNSIGNED NULL,
@@ -185,7 +195,9 @@ CREATE TABLE `view_testpiece_full` (
 	`EntryDate` DATE NULL,
 	`FiringType` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci',
 	`FiringTemperature` INT(11) NULL,
-	`SoilType` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci'
+	`SoilType` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci',
+	`AutoTags` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci',
+	`AutoKeywords` MEDIUMTEXT NULL COLLATE 'utf8mb4_unicode_ci'
 ) ENGINE=MyISAM;
 
 -- Removing temporary table and create final VIEW structure
@@ -194,6 +206,7 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_testpiece_full` AS SE
   tp.ID,
   tp.Image,
   tp.Color_L, tp.Color_A, tp.Color_B,
+  tp.PrimaryColor, tp.DominantColors, tp.ColorProfile,
   gt.Name AS GlazeType,
   sc.Name AS SurfaceCondition,
   tb.ID AS BoardID,
@@ -201,7 +214,9 @@ CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `view_testpiece_full` AS SE
   tp.EntryDate,
   tp.FiringType,
   tp.FiringTemperature,
-  tp.SoilType
+  tp.SoilType,
+  tp.AutoTags,
+  tp.AutoKeywords
 FROM testpiece tp
 LEFT JOIN glazetype gt ON tp.GlazeTypeID = gt.ID
 LEFT JOIN surfacecondition sc ON tp.SurfaceConditionID = sc.ID

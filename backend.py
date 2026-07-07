@@ -1,9 +1,12 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import mysql.connector
+import os
 import zipfile
 import io
 import json
+
+from tile_auto_metadata import analyze_tile_image
 
 app = FastAPI()
 
@@ -53,20 +56,44 @@ def get_or_create_surface_condition_id(cursor, surface_condition_name):
     cursor.execute("INSERT INTO surfacecondition (Name) VALUES (%s)", (surface_condition_name,))
     return cursor.lastrowid
 
+def ensure_auto_metadata_columns(cursor):
+    """Keep older local databases compatible with the automated scanner."""
+    cursor.execute("ALTER TABLE testpiece ADD COLUMN IF NOT EXISTS AutoTags MEDIUMTEXT DEFAULT NULL")
+    cursor.execute("ALTER TABLE testpiece ADD COLUMN IF NOT EXISTS AutoKeywords MEDIUMTEXT DEFAULT NULL")
+    cursor.execute("ALTER TABLE testpiece ADD COLUMN IF NOT EXISTS PrimaryColor VARCHAR(32) DEFAULT NULL")
+    cursor.execute("ALTER TABLE testpiece ADD COLUMN IF NOT EXISTS DominantColors MEDIUMTEXT DEFAULT NULL")
+    cursor.execute("ALTER TABLE testpiece ADD COLUMN IF NOT EXISTS ColorProfile MEDIUMTEXT DEFAULT NULL")
+
+
+def json_text_or_none(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
 def insert_data(data, image_data_dict):
     conn = mysql.connector.connect(
-        host="host.docker.internal",
-        user="ceramadmin",
-        password="J9J9NasakeMuyouAsuteroidoBerutoNo",
-        database="tilearchive",
+        host=os.environ.get("DB_HOST", "tile-db"),
+        port=int(os.environ.get("DB_PORT", "3306")),
+        user=os.environ.get("DB_USER", "ceramadmin"),
+        password=os.environ.get("DB_PASSWORD", "glazed-dev-password"),
+        database=os.environ.get("DB_NAME", os.environ.get("MYSQL_DATABASE", "tilearchive")),
         charset='utf8mb4'
     )
     cursor = conn.cursor()
+    ensure_auto_metadata_columns(cursor)
     
     for item in data:
         ann = item.get('annotation', {})
         image_path = item.get('imageUrl', '')
         image_blob = image_data_dict.get(image_path)
+        auto_metadata = analyze_tile_image(image_blob, ann)
+        auto_tags = ann.get('AutoTags') or ', '.join(auto_metadata.get('tags', []))
+        auto_keywords = ann.get('AutoKeywords') or auto_metadata.get('keywords', '')
+        primary_color = (ann.get('PrimaryColor') or auto_metadata.get('primaryColor') or '').strip() or None
+        dominant_colors = json_text_or_none(ann.get('DominantColors') or auto_metadata.get('dominantColors'))
+        color_profile = json_text_or_none(ann.get('ColorProfile') or auto_metadata.get('colorProfile'))
         
         # Handle GlazeType - convert name to ID
         glaze_type_name = ann.get('GlazeType', '').strip()
@@ -82,20 +109,42 @@ def insert_data(data, image_data_dict):
             firing_temp = None
             
         cursor.execute("""
-            INSERT INTO testpiece (BoardID, Image, Color_L, Color_A, Color_B, GlazeTypeID, FiringTemperature, ChemicalComposition, FiringType, SoilType, SurfaceConditionID)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO testpiece (
+                BoardID,
+                Image,
+                Color_L,
+                Color_A,
+                Color_B,
+                PrimaryColor,
+                DominantColors,
+                ColorProfile,
+                GlazeTypeID,
+                FiringTemperature,
+                ChemicalComposition,
+                FiringType,
+                SoilType,
+                SurfaceConditionID,
+                AutoTags,
+                AutoKeywords
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             1,  # Default BoardID
             image_blob,
             ann.get('ColorL'),
             ann.get('ColorA'),
             ann.get('ColorB'),
+            primary_color,
+            dominant_colors,
+            color_profile,
             glaze_type_id,
             firing_temp,
             ann.get('ChemicalComposition'),
             ann.get('FiringType'),
             ann.get('SoilType'),
-            surface_condition_id
+            surface_condition_id,
+            auto_tags,
+            auto_keywords
         ))
         
     conn.commit()
